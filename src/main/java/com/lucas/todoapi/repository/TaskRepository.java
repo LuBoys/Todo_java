@@ -8,4 +8,10 @@ import java.util.List;
 public interface TaskRepository extends JpaRepository<Task, Long> {
 
     List<Task> findAllByOrderByCreatedAtDesc();
+
+    List<Task> findAllByCompletedFalse();
+
+    long countByCompletedTrue();
+
+    long countByCompletedFalse();
 }

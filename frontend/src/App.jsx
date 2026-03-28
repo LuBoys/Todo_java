@@ -1,38 +1,53 @@
 import { useEffect, useMemo, useState } from "react";
 import { AnimatePresence, motion } from "motion/react";
-import { CheckCircle2, Circle, ListTodo, Plus, Trash2 } from "lucide-react";
+import { CheckCheck, CheckCircle2, Circle, ListTodo, Plus, Search, Trash2 } from "lucide-react";
 
 const filters = ["toutes", "a_faire", "terminees"];
 
 function App() {
   const [tasks, setTasks] = useState([]);
+  const [stats, setStats] = useState(null);
   const [newTaskText, setNewTaskText] = useState("");
+  const [searchText, setSearchText] = useState("");
   const [filter, setFilter] = useState("toutes");
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
+  const [bulkUpdating, setBulkUpdating] = useState(false);
   const [error, setError] = useState("");
 
   useEffect(() => {
     loadTasks();
   }, []);
 
+  // Calcul local de secours si la route de stats ne repond pas.
+  const localActiveTasksCount = tasks.filter((task) => !task.completed).length;
+  const localDoneTasksCount = tasks.length - localActiveTasksCount;
+  const totalTasksCount = stats?.total ?? tasks.length;
+  const activeTasksCount = stats?.remaining ?? localActiveTasksCount;
+  const doneTasksCount = stats?.completed ?? localDoneTasksCount;
+  const completionRate = totalTasksCount === 0 ? 0 : Math.round((doneTasksCount / totalTasksCount) * 100);
+
   const filteredTasks = useMemo(() => {
-    // Le filtre reste volontairement simple, le back n'a pas besoin de le gerer pour ce projet.
+    const normalizedSearch = searchText.trim().toLowerCase();
+
     return tasks.filter((task) => {
-      if (filter === "a_faire") {
-        return !task.completed;
+      if (filter === "a_faire" && task.completed) {
+        return false;
       }
 
-      if (filter === "terminees") {
-        return task.completed;
+      if (filter === "terminees" && !task.completed) {
+        return false;
       }
 
-      return true;
+      if (!normalizedSearch) {
+        return true;
+      }
+
+      // Recherche geree cote front.
+      const searchableText = `${task.title} ${task.description || ""}`.toLowerCase();
+      return searchableText.includes(normalizedSearch);
     });
-  }, [filter, tasks]);
-
-  const activeTasksCount = tasks.filter((task) => !task.completed).length;
-  const doneTasksCount = tasks.length - activeTasksCount;
+  }, [filter, searchText, tasks]);
 
   function getFilterCount(currentFilter) {
     if (currentFilter === "a_faire") {
@@ -43,7 +58,7 @@ function App() {
       return doneTasksCount;
     }
 
-    return tasks.length;
+    return totalTasksCount;
   }
 
   async function loadTasks() {
@@ -51,15 +66,26 @@ function App() {
     setError("");
 
     try {
-      // Je repasse par l'API apres chaque action, c'est plus simple a garder coherent.
-      const response = await fetch("/api/tasks");
+      // Recharge de la liste complete apres chaque action.
+      // Recuperation des stats dans la meme sequence.
+      const [tasksResult, statsResult] = await Promise.allSettled([
+        fetch("/api/tasks"),
+        fetch("/api/tasks/stats")
+      ]);
 
-      if (!response.ok) {
+      if (tasksResult.status !== "fulfilled" || !tasksResult.value.ok) {
         throw new Error("Impossible de charger les taches.");
       }
 
-      const data = await response.json();
-      setTasks(data);
+      const tasksData = await tasksResult.value.json();
+      setTasks(tasksData);
+
+      if (statsResult.status === "fulfilled" && statsResult.value.ok) {
+        const statsData = await statsResult.value.json();
+        setStats(statsData);
+      } else {
+        setStats(null);
+      }
     } catch (fetchError) {
       setError(fetchError.message);
     } finally {
@@ -97,7 +123,7 @@ function App() {
       }
 
       setNewTaskText("");
-      // Ici je prefere recharger la liste plutot que de maintenir plusieurs mises a jour locales.
+      // Recharge complete de la liste apres creation.
       await loadTasks();
     } catch (submitError) {
       setError(submitError.message);
@@ -110,7 +136,7 @@ function App() {
     setError("");
 
     try {
-      // Je renvoie toute la tache ici pour rester coherent avec le DTO du back.
+      // Envoi de toute la tache pour rester coherent avec le DTO du back.
       const response = await fetch(`/api/tasks/${task.id}`, {
         method: "PUT",
         headers: {
@@ -161,7 +187,7 @@ function App() {
     setError("");
 
     try {
-      // Si plusieurs taches sont terminees, autant tout supprimer d'un coup.
+      // Suppression en lot des taches deja terminees.
       await Promise.all(
         completedTasks.map((task) =>
           fetch(`/api/tasks/${task.id}`, {
@@ -180,6 +206,32 @@ function App() {
     }
   }
 
+  async function completeAllTasks() {
+    if (activeTasksCount === 0) {
+      return;
+    }
+
+    // Desactivation du bouton pendant la requete pour eviter les doubles clics.
+    setBulkUpdating(true);
+    setError("");
+
+    try {
+      const response = await fetch("/api/tasks/complete-all", {
+        method: "PUT"
+      });
+
+      if (!response.ok) {
+        throw new Error("Impossible de terminer toutes les taches.");
+      }
+
+      await loadTasks();
+    } catch (completeAllError) {
+      setError(completeAllError.message);
+    } finally {
+      setBulkUpdating(false);
+    }
+  }
+
   return (
     <div className="min-h-screen bg-transparent px-4 py-12 text-slate-900 sm:px-6 lg:px-8">
       <div className="mx-auto max-w-2xl">
@@ -192,7 +244,14 @@ function App() {
           <div className="rounded-xl bg-blue-600 p-3 text-white shadow-sm">
             <ListTodo size={28} />
           </div>
-          <h1 className="text-3xl font-bold tracking-tight text-slate-900">Todo Lucas</h1>
+          <div>
+            <h1 className="text-3xl font-bold tracking-tight text-slate-900">Todo Lucas</h1>
+            <p className="mt-1 text-sm text-slate-500">
+              {totalTasksCount === 0
+                ? "Suivi simple des taches du moment"
+                : `${doneTasksCount} tache${doneTasksCount > 1 ? "s" : ""} terminee${doneTasksCount > 1 ? "s" : ""} sur ${totalTasksCount}`}
+            </p>
+          </div>
         </motion.div>
 
         <motion.div
@@ -201,13 +260,38 @@ function App() {
           transition={{ duration: 0.35, delay: 0.06 }}
           className="mb-6 flex flex-wrap gap-3"
         >
-          <SummaryPill label="Total" value={tasks.length} />
+          <SummaryPill label="Total" value={totalTasksCount} />
           <SummaryPill label="A faire" value={activeTasksCount} />
           <SummaryPill label="Terminees" value={doneTasksCount} />
           <div className="inline-flex items-center gap-2 rounded-full border border-emerald-200 bg-emerald-50 px-4 py-2 text-sm font-medium text-emerald-700">
             <span className="h-2 w-2 rounded-full bg-emerald-500" />
             API connectee
           </div>
+        </motion.div>
+
+        <motion.div
+          initial={{ opacity: 0, y: 14 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.35, delay: 0.08 }}
+          className="mb-6 rounded-2xl border border-slate-200 bg-white/85 p-5 shadow-[0_10px_30px_rgba(15,23,42,0.05)]"
+        >
+          <div className="flex items-center justify-between gap-3 text-sm">
+            <span className="font-medium text-slate-700">Progression</span>
+            <span className="text-slate-500">{completionRate}% termine</span>
+          </div>
+
+          <div className="mt-3 h-2 overflow-hidden rounded-full bg-slate-100">
+            <div
+              className="h-full rounded-full bg-blue-600 transition-all duration-300"
+              style={{ width: `${completionRate}%` }}
+            />
+          </div>
+
+          <p className="mt-3 text-sm text-slate-500">
+            {activeTasksCount === 0 && totalTasksCount > 0
+              ? "Tout est termine pour le moment."
+              : `${activeTasksCount} tache${activeTasksCount > 1 ? "s" : ""} encore a faire.`}
+          </p>
         </motion.div>
 
         <motion.div
@@ -234,6 +318,44 @@ function App() {
                 <Plus size={20} />
               </button>
             </form>
+
+            {tasks.length > 0 && (
+              <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-center">
+                <div className="relative flex-1">
+                  <Search
+                    size={16}
+                    className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-slate-400"
+                  />
+                  <input
+                    type="text"
+                    value={searchText}
+                    onChange={(event) => setSearchText(event.target.value)}
+                    placeholder="Rechercher une tache"
+                    className="w-full rounded-xl border border-slate-200 bg-white py-3 pl-11 pr-20 text-sm text-slate-700 placeholder:text-slate-400 shadow-sm transition-all focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                  />
+
+                  {searchText.trim() && (
+                    <button
+                      type="button"
+                      onClick={() => setSearchText("")}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-xs font-medium text-slate-500 transition-colors hover:text-slate-900"
+                    >
+                      Effacer
+                    </button>
+                  )}
+                </div>
+
+                <button
+                  type="button"
+                  onClick={completeAllTasks}
+                  disabled={bulkUpdating || activeTasksCount === 0}
+                  className="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  <CheckCheck size={16} />
+                  Tout terminer
+                </button>
+              </div>
+            )}
           </div>
 
           {tasks.length > 0 && (
@@ -300,11 +422,13 @@ function App() {
                   exit={{ opacity: 0, paddingTop: 0, paddingBottom: 0 }}
                   className="text-center text-slate-400"
                 >
-                  {filter === "terminees"
-                    ? "Aucune tache terminee."
-                    : filter === "a_faire"
-                      ? "Vous n'avez aucune tache en cours."
-                      : "Votre liste est vide. Ajoutez une tache ci-dessus."}
+                  {searchText.trim()
+                    ? "Aucune tache ne correspond a votre recherche."
+                    : filter === "terminees"
+                      ? "Aucune tache terminee."
+                      : filter === "a_faire"
+                        ? "Vous n'avez aucune tache en cours."
+                        : "Votre liste est vide. Ajoutez une tache ci-dessus."}
                 </motion.li>
               ) : (
                 filteredTasks.map((task) => (
@@ -331,13 +455,22 @@ function App() {
                         {task.completed ? <CheckCircle2 size={24} /> : <Circle size={24} />}
                       </button>
 
-                      <span
-                        className={`text-base transition-all duration-200 ${
-                          task.completed ? "text-slate-400 line-through" : "text-slate-700"
-                        }`}
-                      >
-                        {task.title}
-                      </span>
+                      <div className="min-w-0">
+                        <p
+                          className={`text-base transition-all duration-200 ${
+                            task.completed ? "text-slate-400 line-through" : "text-slate-700"
+                          }`}
+                        >
+                          {task.title}
+                        </p>
+
+                        <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-slate-400">
+                          {task.description && (
+                            <span className="max-w-xs truncate sm:max-w-sm">{task.description}</span>
+                          )}
+                          <span>Maj {formatTaskDate(task.updatedAt)}</span>
+                        </div>
+                      </div>
                     </div>
 
                     <button
@@ -382,6 +515,26 @@ function SummaryPill({ label, value }) {
       <span>{label}</span>
     </div>
   );
+}
+
+function formatTaskDate(value) {
+  if (!value) {
+    return "--";
+  }
+
+  // Formatage de la date brute avant affichage dans l'UI.
+  const parsedDate = new Date(value.replace(" ", "T"));
+
+  if (Number.isNaN(parsedDate.getTime())) {
+    return value;
+  }
+
+  return new Intl.DateTimeFormat("fr-FR", {
+    day: "2-digit",
+    month: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit"
+  }).format(parsedDate);
 }
 
 export default App;

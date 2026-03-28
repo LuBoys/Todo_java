@@ -48,7 +48,7 @@ public class Task {
 
     @PrePersist
     public void onCreate() {
-        // Je garde createdAt et updatedAt alignes a la creation.
+        // Synchronisation de createdAt et updatedAt a la creation.
         LocalDateTime now = LocalDateTime.now();
         this.createdAt = now;
         this.updatedAt = now;

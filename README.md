@@ -11,6 +11,8 @@ Le backend expose une API REST en Java / Spring Boot, et le frontend React + Tai
 - voir une tache par son id
 - modifier une tache
 - supprimer une tache
+- terminer toutes les taches restantes
+- voir quelques stats rapides sur la liste
 - valider les donnees entrantes
 - gerer les erreurs proprement
 
@@ -112,6 +114,22 @@ Content-Type: application/json
 GET /api/tasks
 ```
 
+### Voir les stats
+
+```http
+GET /api/tasks/stats
+```
+
+Exemple de reponse :
+
+```json
+{
+  "total": 6,
+  "completed": 2,
+  "remaining": 4
+}
+```
+
 ### Voir une tache
 
 ```http
@@ -137,6 +155,12 @@ Content-Type: application/json
 
 ```http
 DELETE /api/tasks/{id}
+```
+
+### Terminer toutes les taches restantes
+
+```http
+PUT /api/tasks/complete-all
 ```
 
 ## Exemple avec curl
@@ -182,5 +206,4 @@ Une collection Postman est dispo ici :
 
 - ajouter une vraie authentification
 - brancher PostgreSQL ou MySQL
-- filtrer les taches par statut
 - ajouter Swagger / OpenAPI

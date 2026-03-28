@@ -85,6 +85,35 @@ class TaskControllerIntegrationTest {
     }
 
     @Test
+    void shouldReturnTaskStats() throws Exception {
+        taskRepository.save(new Task("Tache 1", "A faire", false));
+        taskRepository.save(new Task("Tache 2", "Deja terminee", true));
+        taskRepository.save(new Task("Tache 3", "Encore en cours", false));
+
+        mockMvc.perform(get("/api/tasks/stats"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.total").value(3))
+                .andExpect(jsonPath("$.completed").value(1))
+                .andExpect(jsonPath("$.remaining").value(2));
+    }
+
+    @Test
+    void shouldCompleteAllTasks() throws Exception {
+        taskRepository.save(new Task("Premiere tache", "Encore ouverte", false));
+        taskRepository.save(new Task("Deuxieme tache", "Encore ouverte aussi", false));
+        taskRepository.save(new Task("Deja faite", "Pas a modifier", true));
+
+        mockMvc.perform(put("/api/tasks/complete-all"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].completed").value(true));
+
+        mockMvc.perform(get("/api/tasks/stats"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.remaining").value(0))
+                .andExpect(jsonPath("$.completed").value(3));
+    }
+
+    @Test
     void shouldDeleteTask() throws Exception {
         Task task = new Task("A supprimer", "On teste la suppression", false);
         Task savedTask = taskRepository.save(task);

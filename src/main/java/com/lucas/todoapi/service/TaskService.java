@@ -1,6 +1,7 @@
 package com.lucas.todoapi.service;
 
 import com.lucas.todoapi.dto.TaskRequest;
+import com.lucas.todoapi.dto.TaskStatsResponse;
 import com.lucas.todoapi.exception.TaskNotFoundException;
 import com.lucas.todoapi.model.Task;
 import com.lucas.todoapi.repository.TaskRepository;
@@ -21,14 +22,14 @@ public class TaskService {
         Task task = new Task();
         task.setTitle(request.getTitle().trim());
         task.setDescription(cleanDescription(request.getDescription()));
-        // Par securite je pars sur false si le front n'envoie rien.
+        // Valeur par defaut a false si le front n'envoie rien.
         task.setCompleted(Boolean.TRUE.equals(request.getCompleted()));
 
         return taskRepository.save(task);
     }
 
     public List<Task> getAllTasks() {
-        // Je remonte les plus recentes en premier, c'est plus naturel dans une todo.
+        // Tri par date de creation descendante.
         return taskRepository.findAllByOrderByCreatedAtDesc();
     }
 
@@ -36,10 +37,22 @@ public class TaskService {
         return findTaskById(id);
     }
 
+    public TaskStatsResponse getTaskStats() {
+        // Compteurs utilises par le bloc de stats du front.
+        long completedCount = taskRepository.countByCompletedTrue();
+        long remainingCount = taskRepository.countByCompletedFalse();
+
+        return new TaskStatsResponse(
+                completedCount + remainingCount,
+                completedCount,
+                remainingCount
+        );
+    }
+
     public Task updateTask(Long id, TaskRequest request) {
         Task task = findTaskById(id);
 
-        // Je garde la logique ici pour que le controller reste leger.
+        // Logique conservee dans le service pour laisser le controller leger.
         task.setTitle(request.getTitle().trim());
         task.setDescription(cleanDescription(request.getDescription()));
 
@@ -55,6 +68,22 @@ public class TaskService {
         taskRepository.delete(task);
     }
 
+    public List<Task> completeAllTasks() {
+        List<Task> tasksToComplete = taskRepository.findAllByCompletedFalse();
+
+        if (tasksToComplete.isEmpty()) {
+            return getAllTasks();
+        }
+
+        // Mise a jour uniquement des taches encore ouvertes.
+        for (Task task : tasksToComplete) {
+            task.setCompleted(true);
+        }
+
+        taskRepository.saveAll(tasksToComplete);
+        return getAllTasks();
+    }
+
     private Task findTaskById(Long id) {
         return taskRepository.findById(id)
                 .orElseThrow(() -> new TaskNotFoundException(id));
@@ -62,7 +91,7 @@ public class TaskService {
 
     private String cleanDescription(String description) {
         if (description == null || description.isBlank()) {
-            // Je prefère null plutot qu'une chaine vide en base.
+            // Stockage a null plutot qu'en chaine vide.
             return null;
         }
 

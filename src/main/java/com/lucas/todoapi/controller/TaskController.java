@@ -1,6 +1,7 @@
 package com.lucas.todoapi.controller;
 
 import com.lucas.todoapi.dto.TaskRequest;
+import com.lucas.todoapi.dto.TaskStatsResponse;
 import com.lucas.todoapi.model.Task;
 import com.lucas.todoapi.service.TaskService;
 import jakarta.validation.Valid;
@@ -38,6 +39,11 @@ public class TaskController {
         return ResponseEntity.ok(taskService.getAllTasks());
     }
 
+    @GetMapping("/stats")
+    public ResponseEntity<TaskStatsResponse> getTaskStats() {
+        return ResponseEntity.ok(taskService.getTaskStats());
+    }
+
     @GetMapping("/{id}")
     public ResponseEntity<Task> getTaskById(@PathVariable Long id) {
         return ResponseEntity.ok(taskService.getTaskById(id));
@@ -46,6 +52,11 @@ public class TaskController {
     @PutMapping("/{id}")
     public ResponseEntity<Task> updateTask(@PathVariable Long id, @Valid @RequestBody TaskRequest request) {
         return ResponseEntity.ok(taskService.updateTask(id, request));
+    }
+
+    @PutMapping("/complete-all")
+    public ResponseEntity<List<Task>> completeAllTasks() {
+        return ResponseEntity.ok(taskService.completeAllTasks());
     }
 
     @DeleteMapping("/{id}")

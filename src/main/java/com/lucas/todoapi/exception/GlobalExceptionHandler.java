@@ -34,13 +34,13 @@ public class GlobalExceptionHandler {
                 })
                 .toList();
 
-        // Je prefere renvoyer une seule phrase propre plutot qu'une liste brute d'erreurs Spring.
+        // Construction d'un message unique plus lisible pour la reponse HTTP.
         return buildErrorResponse(HttpStatus.BAD_REQUEST, String.join(", ", errors), request.getRequestURI());
     }
 
     @ExceptionHandler(Exception.class)
     public ResponseEntity<ApiErrorResponse> handleGeneric(Exception exception, HttpServletRequest request) {
-        // Je garde le detail technique dans les logs, pas dans la reponse HTTP.
+        // Detail technique conserve uniquement dans les logs.
         return buildErrorResponse(
                 HttpStatus.INTERNAL_SERVER_ERROR,
                 "Une erreur interne est survenue",
