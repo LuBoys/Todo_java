@@ -1,6 +1,17 @@
 import { useEffect, useMemo, useState } from "react";
 import { AnimatePresence, motion } from "motion/react";
-import { CheckCheck, CheckCircle2, Circle, ListTodo, Plus, Search, Trash2 } from "lucide-react";
+import {
+  CheckCheck,
+  CheckCircle2,
+  Circle,
+  ListTodo,
+  PencilLine,
+  Plus,
+  Save,
+  Search,
+  Trash2,
+  X
+} from "lucide-react";
 
 const filters = ["toutes", "a_faire", "terminees"];
 
@@ -8,11 +19,17 @@ function App() {
   const [tasks, setTasks] = useState([]);
   const [stats, setStats] = useState(null);
   const [newTaskText, setNewTaskText] = useState("");
+  const [newTaskDescription, setNewTaskDescription] = useState("");
   const [searchText, setSearchText] = useState("");
   const [filter, setFilter] = useState("toutes");
+  const [showDescriptionField, setShowDescriptionField] = useState(false);
+  const [editingTaskId, setEditingTaskId] = useState(null);
+  const [editingTitle, setEditingTitle] = useState("");
+  const [editingDescription, setEditingDescription] = useState("");
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [bulkUpdating, setBulkUpdating] = useState(false);
+  const [savingTaskId, setSavingTaskId] = useState(null);
   const [error, setError] = useState("");
 
   useEffect(() => {
@@ -59,6 +76,19 @@ function App() {
     }
 
     return totalTasksCount;
+  }
+
+  function resetEditingState() {
+    setEditingTaskId(null);
+    setEditingTitle("");
+    setEditingDescription("");
+  }
+
+  function beginTaskEdit(task) {
+    setError("");
+    setEditingTaskId(task.id);
+    setEditingTitle(task.title);
+    setEditingDescription(task.description || "");
   }
 
   async function loadTasks() {
@@ -112,7 +142,7 @@ function App() {
         },
         body: JSON.stringify({
           title: text,
-          description: "",
+          description: newTaskDescription.trim(),
           completed: false
         })
       });
@@ -123,6 +153,8 @@ function App() {
       }
 
       setNewTaskText("");
+      setNewTaskDescription("");
+      setShowDescriptionField(false);
       // Recharge complete de la liste apres creation.
       await loadTasks();
     } catch (submitError) {
@@ -160,6 +192,10 @@ function App() {
   }
 
   async function deleteTask(id) {
+    if (editingTaskId === id) {
+      resetEditingState();
+    }
+
     setError("");
 
     try {
@@ -203,6 +239,44 @@ function App() {
       await loadTasks();
     } catch {
       setError("Impossible d'effacer les taches terminees.");
+    }
+  }
+
+  async function saveTaskEdits(task) {
+    const trimmedTitle = editingTitle.trim();
+
+    if (!trimmedTitle) {
+      setError("Le titre ne peut pas etre vide.");
+      return;
+    }
+
+    setSavingTaskId(task.id);
+    setError("");
+
+    try {
+      const response = await fetch(`/api/tasks/${task.id}`, {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          title: trimmedTitle,
+          description: editingDescription.trim(),
+          completed: task.completed
+        })
+      });
+
+      if (!response.ok) {
+        const apiError = await response.json().catch(() => null);
+        throw new Error(apiError?.message || "Impossible d'enregistrer les modifications.");
+      }
+
+      resetEditingState();
+      await loadTasks();
+    } catch (saveError) {
+      setError(saveError.message);
+    } finally {
+      setSavingTaskId(null);
     }
   }
 
@@ -301,22 +375,52 @@ function App() {
           className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-[0_18px_40px_rgba(15,23,42,0.06)]"
         >
           <div className="border-b border-slate-100 bg-slate-50/70 p-6">
-            <form onSubmit={addTask} className="relative flex items-center">
-              <input
-                type="text"
-                value={newTaskText}
-                onChange={(event) => setNewTaskText(event.target.value)}
-                placeholder="Que devez-vous faire ?"
-                className="w-full rounded-xl border border-slate-200 bg-white py-4 pl-5 pr-14 text-slate-700 placeholder:text-slate-400 shadow-sm transition-all focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
-              />
-              <button
-                type="submit"
-                disabled={submitting || !newTaskText.trim()}
-                className="absolute right-2 rounded-lg bg-blue-600 p-2 text-white transition-colors hover:bg-blue-700 disabled:opacity-50 disabled:hover:bg-blue-600"
-                aria-label="Ajouter une tache"
-              >
-                <Plus size={20} />
-              </button>
+            <form onSubmit={addTask} className="space-y-3">
+              <div className="relative flex items-center">
+                <input
+                  type="text"
+                  value={newTaskText}
+                  onChange={(event) => setNewTaskText(event.target.value)}
+                  placeholder="Que devez-vous faire ?"
+                  maxLength={120}
+                  className="w-full rounded-xl border border-slate-200 bg-white py-4 pl-5 pr-14 text-slate-700 placeholder:text-slate-400 shadow-sm transition-all focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                />
+                <button
+                  type="submit"
+                  disabled={submitting || !newTaskText.trim()}
+                  className="absolute right-2 rounded-lg bg-blue-600 p-2 text-white transition-colors hover:bg-blue-700 disabled:opacity-50 disabled:hover:bg-blue-600"
+                  aria-label="Ajouter une tache"
+                >
+                  <Plus size={20} />
+                </button>
+              </div>
+
+              {showDescriptionField && (
+                <textarea
+                  value={newTaskDescription}
+                  onChange={(event) => setNewTaskDescription(event.target.value)}
+                  placeholder="Ajouter un detail utile si besoin"
+                  maxLength={500}
+                  rows={3}
+                  className="w-full resize-none rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700 placeholder:text-slate-400 shadow-sm transition-all focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                />
+              )}
+
+              <div className="flex flex-wrap items-center justify-between gap-3 text-sm">
+                <button
+                  type="button"
+                  onClick={() => setShowDescriptionField((currentValue) => !currentValue)}
+                  className="font-medium text-slate-500 transition-colors hover:text-slate-900"
+                >
+                  {showDescriptionField ? "Masquer le detail" : "Ajouter un detail"}
+                </button>
+
+                {showDescriptionField && (
+                  <span className="text-xs text-slate-400">
+                    {newTaskDescription.trim().length}/500 caracteres
+                  </span>
+                )}
+              </div>
             </form>
 
             {tasks.length > 0 && (
@@ -439,48 +543,125 @@ function App() {
                     animate={{ opacity: 1, y: 0 }}
                     exit={{ opacity: 0, height: 0, overflow: "hidden" }}
                     transition={{ duration: 0.2 }}
-                    className="group flex items-center justify-between px-6 py-4 transition-colors hover:bg-slate-50"
+                    className={`group px-6 py-4 transition-colors ${
+                      editingTaskId === task.id ? "bg-slate-50/80" : "hover:bg-slate-50"
+                    }`}
                   >
-                    <div
-                      className="flex flex-1 cursor-pointer items-center gap-4"
-                      onClick={() => toggleTask(task)}
-                    >
-                      <button
-                        type="button"
-                        className={`flex-shrink-0 transition-colors ${
-                          task.completed ? "text-blue-500" : "text-slate-300 hover:text-blue-400"
-                        }`}
-                        aria-label="Changer le statut"
+                    {editingTaskId === task.id ? (
+                      <form
+                        onSubmit={(event) => {
+                          event.preventDefault();
+                          saveTaskEdits(task);
+                        }}
+                        className="flex flex-col gap-4 sm:flex-row sm:items-start"
                       >
-                        {task.completed ? <CheckCircle2 size={24} /> : <Circle size={24} />}
-                      </button>
-
-                      <div className="min-w-0">
-                        <p
-                          className={`text-base transition-all duration-200 ${
-                            task.completed ? "text-slate-400 line-through" : "text-slate-700"
+                        <span
+                          className={`pt-1 ${
+                            task.completed ? "text-blue-500" : "text-slate-300"
                           }`}
                         >
-                          {task.title}
-                        </p>
+                          {task.completed ? <CheckCircle2 size={24} /> : <Circle size={24} />}
+                        </span>
 
-                        <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-slate-400">
-                          {task.description && (
-                            <span className="max-w-xs truncate sm:max-w-sm">{task.description}</span>
-                          )}
-                          <span>Maj {formatTaskDate(task.updatedAt)}</span>
+                        <div className="flex-1 space-y-3">
+                          <input
+                            type="text"
+                            value={editingTitle}
+                            onChange={(event) => setEditingTitle(event.target.value)}
+                            maxLength={120}
+                            className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700 shadow-sm transition-all focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                          />
+
+                          <textarea
+                            value={editingDescription}
+                            onChange={(event) => setEditingDescription(event.target.value)}
+                            placeholder="Ajouter un detail si besoin"
+                            maxLength={500}
+                            rows={3}
+                            className="w-full resize-none rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700 shadow-sm transition-all focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                          />
+
+                          <div className="flex flex-wrap items-center justify-between gap-3 text-xs text-slate-400">
+                            <span>Maj {formatTaskDate(task.updatedAt)}</span>
+                            <span>{editingDescription.trim().length}/500 caracteres</span>
+                          </div>
+                        </div>
+
+                        <div className="flex shrink-0 items-center gap-2 self-end sm:self-start">
+                          <button
+                            type="submit"
+                            disabled={savingTaskId === task.id || !editingTitle.trim()}
+                            className="inline-flex items-center gap-2 rounded-lg bg-slate-900 px-3 py-2 text-sm font-medium text-white transition-colors hover:bg-slate-800 disabled:opacity-50"
+                          >
+                            <Save size={16} />
+                            Enregistrer
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={resetEditingState}
+                            className="inline-flex items-center gap-2 rounded-lg border border-slate-200 px-3 py-2 text-sm font-medium text-slate-600 transition-colors hover:bg-white"
+                          >
+                            <X size={16} />
+                            Annuler
+                          </button>
+                        </div>
+                      </form>
+                    ) : (
+                      <div className="flex items-center justify-between gap-4">
+                        <button
+                          type="button"
+                          className="flex min-w-0 flex-1 items-center gap-4 text-left"
+                          onClick={() => toggleTask(task)}
+                        >
+                          <span
+                            className={`flex-shrink-0 transition-colors ${
+                              task.completed ? "text-blue-500" : "text-slate-300 hover:text-blue-400"
+                            }`}
+                            aria-hidden="true"
+                          >
+                            {task.completed ? <CheckCircle2 size={24} /> : <Circle size={24} />}
+                          </span>
+
+                          <span className="min-w-0">
+                            <span
+                              className={`block text-base transition-all duration-200 ${
+                                task.completed ? "text-slate-400 line-through" : "text-slate-700"
+                              }`}
+                            >
+                              {task.title}
+                            </span>
+
+                            <span className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-slate-400">
+                              {task.description && (
+                                <span className="max-w-xs truncate sm:max-w-sm">{task.description}</span>
+                              )}
+                              <span>Maj {formatTaskDate(task.updatedAt)}</span>
+                            </span>
+                          </span>
+                        </button>
+
+                        <div className="flex items-center gap-1">
+                          <button
+                            type="button"
+                            onClick={() => beginTaskEdit(task)}
+                            className="rounded-lg p-2 text-slate-400 opacity-0 transition-all hover:bg-slate-100 hover:text-slate-700 focus:opacity-100 group-hover:opacity-100"
+                            aria-label="Modifier la tache"
+                          >
+                            <PencilLine size={18} />
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() => deleteTask(task.id)}
+                            className="rounded-lg p-2 text-slate-400 opacity-0 transition-all hover:bg-red-50 hover:text-red-500 focus:opacity-100 group-hover:opacity-100"
+                            aria-label="Supprimer la tache"
+                          >
+                            <Trash2 size={18} />
+                          </button>
                         </div>
                       </div>
-                    </div>
-
-                    <button
-                      type="button"
-                      onClick={() => deleteTask(task.id)}
-                      className="rounded-lg p-2 text-slate-400 opacity-0 transition-all hover:bg-red-50 hover:text-red-500 focus:opacity-100 group-hover:opacity-100"
-                      aria-label="Supprimer la tache"
-                    >
-                      <Trash2 size={18} />
-                    </button>
+                    )}
                   </motion.li>
                 ))
               )}
@@ -501,7 +682,7 @@ function App() {
         </motion.div>
 
         <p className="mt-8 text-center text-sm text-slate-400">
-          Appuyez sur Entree pour ajouter une tache
+          Appuyez sur Entree dans le champ titre pour ajouter une tache
         </p>
       </div>
     </div>

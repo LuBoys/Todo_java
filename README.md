@@ -7,9 +7,11 @@ Le backend expose une API REST en Java / Spring Boot, et le frontend React + Tai
 ## Fonctionnalites
 
 - creer une tache
+- ajouter un detail facultatif a une tache
 - voir toutes les taches
 - voir une tache par son id
 - modifier une tache
+- modifier une tache directement depuis l'interface
 - supprimer une tache
 - terminer toutes les taches restantes
 - voir quelques stats rapides sur la liste
