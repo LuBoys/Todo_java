@@ -54,6 +54,12 @@ public class TaskController {
         return ResponseEntity.ok(taskService.updateTask(id, request));
     }
 
+    @PostMapping("/{id}/duplicate")
+    public ResponseEntity<Task> duplicateTask(@PathVariable Long id) {
+        Task duplicatedTask = taskService.duplicateTask(id);
+        return ResponseEntity.status(HttpStatus.CREATED).body(duplicatedTask);
+    }
+
     @PutMapping("/complete-all")
     public ResponseEntity<List<Task>> completeAllTasks() {
         return ResponseEntity.ok(taskService.completeAllTasks());

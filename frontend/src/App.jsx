@@ -4,6 +4,7 @@ import {
   CheckCheck,
   CheckCircle2,
   Circle,
+  Copy,
   ListTodo,
   PencilLine,
   Plus,
@@ -29,6 +30,7 @@ function App() {
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [bulkUpdating, setBulkUpdating] = useState(false);
+  const [duplicatingTaskId, setDuplicatingTaskId] = useState(null);
   const [savingTaskId, setSavingTaskId] = useState(null);
   const [error, setError] = useState("");
 
@@ -210,6 +212,29 @@ function App() {
       await loadTasks();
     } catch (deleteError) {
       setError(deleteError.message);
+    }
+  }
+
+  async function duplicateTask(task) {
+    setDuplicatingTaskId(task.id);
+    setError("");
+
+    try {
+      const response = await fetch(`/api/tasks/${task.id}/duplicate`, {
+        method: "POST"
+      });
+
+      if (!response.ok) {
+        const apiError = await response.json().catch(() => null);
+        throw new Error(apiError?.message || "Impossible de dupliquer la tache.");
+      }
+
+      // On recharge la liste pour recuperer la copie avec son id et ses dates backend.
+      await loadTasks();
+    } catch (duplicateError) {
+      setError(duplicateError.message);
+    } finally {
+      setDuplicatingTaskId(null);
     }
   }
 
@@ -642,6 +667,16 @@ function App() {
                         </button>
 
                         <div className="flex items-center gap-1">
+                          <button
+                            type="button"
+                            onClick={() => duplicateTask(task)}
+                            disabled={duplicatingTaskId === task.id}
+                            className="rounded-lg p-2 text-slate-400 opacity-0 transition-all hover:bg-slate-100 hover:text-slate-700 focus:opacity-100 group-hover:opacity-100 disabled:cursor-not-allowed disabled:opacity-100 disabled:hover:bg-transparent"
+                            aria-label="Dupliquer la tache"
+                          >
+                            <Copy size={18} />
+                          </button>
+
                           <button
                             type="button"
                             onClick={() => beginTaskEdit(task)}

@@ -12,6 +12,7 @@ Le backend expose une API REST en Java / Spring Boot, et le frontend React + Tai
 - voir une tache par son id
 - modifier une tache
 - modifier une tache directement depuis l'interface
+- dupliquer une tache en un clic
 - supprimer une tache
 - terminer toutes les taches restantes
 - voir quelques stats rapides sur la liste
@@ -152,6 +153,14 @@ Content-Type: application/json
   "completed": true
 }
 ```
+
+### Dupliquer une tache
+
+```http
+POST /api/tasks/{id}/duplicate
+```
+
+La copie reprend le titre et la description, puis repart en tache non terminee.
 
 ### Supprimer une tache
 

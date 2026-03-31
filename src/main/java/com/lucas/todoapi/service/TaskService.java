@@ -63,6 +63,18 @@ public class TaskService {
         return taskRepository.save(task);
     }
 
+    public Task duplicateTask(Long id) {
+        Task sourceTask = findTaskById(id);
+        Task duplicatedTask = new Task();
+
+        duplicatedTask.setTitle(sourceTask.getTitle());
+        duplicatedTask.setDescription(sourceTask.getDescription());
+        // Une copie repart ouverte pour pouvoir etre retravaillee sans toucher a l'originale.
+        duplicatedTask.setCompleted(false);
+
+        return taskRepository.save(duplicatedTask);
+    }
+
     public void deleteTask(Long id) {
         Task task = findTaskById(id);
         taskRepository.delete(task);

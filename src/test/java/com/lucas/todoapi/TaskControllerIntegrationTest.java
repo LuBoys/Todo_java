@@ -85,6 +85,21 @@ class TaskControllerIntegrationTest {
     }
 
     @Test
+    void shouldDuplicateTask() throws Exception {
+        Task task = new Task("Preparer le sprint", "Reprendre la meme base pour lundi", true);
+        Task savedTask = taskRepository.save(task);
+
+        mockMvc.perform(post("/api/tasks/{id}/duplicate", savedTask.getId()))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.id").exists())
+                .andExpect(jsonPath("$.title").value("Preparer le sprint"))
+                .andExpect(jsonPath("$.description").value("Reprendre la meme base pour lundi"))
+                .andExpect(jsonPath("$.completed").value(false));
+
+        org.assertj.core.api.Assertions.assertThat(taskRepository.count()).isEqualTo(2);
+    }
+
+    @Test
     void shouldReturnTaskStats() throws Exception {
         taskRepository.save(new Task("Tache 1", "A faire", false));
         taskRepository.save(new Task("Tache 2", "Deja terminee", true));
