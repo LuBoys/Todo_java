@@ -11,6 +11,8 @@ public interface TaskRepository extends JpaRepository<Task, Long> {
 
     List<Task> findAllByCompletedFalse();
 
+    List<Task> findAllByCompletedTrue();
+
     long countByCompletedTrue();
 
     long countByCompletedFalse();

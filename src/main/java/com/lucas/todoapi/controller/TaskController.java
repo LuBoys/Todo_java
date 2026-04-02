@@ -65,6 +65,12 @@ public class TaskController {
         return ResponseEntity.ok(taskService.completeAllTasks());
     }
 
+    @DeleteMapping("/completed")
+    public ResponseEntity<Void> deleteCompletedTasks() {
+        taskService.deleteCompletedTasks();
+        return ResponseEntity.noContent().build();
+    }
+
     @DeleteMapping("/{id}")
     public ResponseEntity<Void> deleteTask(@PathVariable Long id) {
         taskService.deleteTask(id);

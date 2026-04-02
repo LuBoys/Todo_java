@@ -3,6 +3,7 @@ package com.lucas.todoapi;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.lucas.todoapi.dto.TaskRequest;
 import com.lucas.todoapi.model.Task;
+import com.lucas.todoapi.model.TaskPriority;
 import com.lucas.todoapi.repository.TaskRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -43,6 +44,7 @@ class TaskControllerIntegrationTest {
         request.setTitle("Faire les tests");
         request.setDescription("Verifier que l'API repond bien");
         request.setCompleted(false);
+        request.setPriority("HIGH");
 
         mockMvc.perform(post("/api/tasks")
                         .contentType(MediaType.APPLICATION_JSON)
@@ -50,7 +52,8 @@ class TaskControllerIntegrationTest {
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.id").exists())
                 .andExpect(jsonPath("$.title").value("Faire les tests"))
-                .andExpect(jsonPath("$.completed").value(false));
+                .andExpect(jsonPath("$.completed").value(false))
+                .andExpect(jsonPath("$.priority").value("HIGH"));
     }
 
     @Test
@@ -75,18 +78,20 @@ class TaskControllerIntegrationTest {
         request.setTitle("Tache modifiee");
         request.setDescription("Description mise a jour");
         request.setCompleted(true);
+        request.setPriority("LOW");
 
         mockMvc.perform(put("/api/tasks/{id}", savedTask.getId())
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(request)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.title").value("Tache modifiee"))
-                .andExpect(jsonPath("$.completed").value(true));
+                .andExpect(jsonPath("$.completed").value(true))
+                .andExpect(jsonPath("$.priority").value("LOW"));
     }
 
     @Test
     void shouldDuplicateTask() throws Exception {
-        Task task = new Task("Preparer le sprint", "Reprendre la meme base pour lundi", true);
+        Task task = new Task("Preparer le sprint", "Reprendre la meme base pour lundi", true, TaskPriority.HIGH);
         Task savedTask = taskRepository.save(task);
 
         mockMvc.perform(post("/api/tasks/{id}/duplicate", savedTask.getId()))
@@ -94,9 +99,38 @@ class TaskControllerIntegrationTest {
                 .andExpect(jsonPath("$.id").exists())
                 .andExpect(jsonPath("$.title").value("Preparer le sprint"))
                 .andExpect(jsonPath("$.description").value("Reprendre la meme base pour lundi"))
-                .andExpect(jsonPath("$.completed").value(false));
+                .andExpect(jsonPath("$.completed").value(false))
+                .andExpect(jsonPath("$.priority").value("HIGH"));
 
         org.assertj.core.api.Assertions.assertThat(taskRepository.count()).isEqualTo(2);
+    }
+
+    @Test
+    void shouldUseMediumPriorityWhenPriorityIsMissing() throws Exception {
+        TaskRequest request = new TaskRequest();
+        request.setTitle("Tache sans priorite");
+        request.setDescription("Le back doit appliquer une valeur par defaut");
+        request.setCompleted(false);
+
+        mockMvc.perform(post("/api/tasks")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(request)))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.priority").value("MEDIUM"));
+    }
+
+    @Test
+    void shouldRejectInvalidPriority() throws Exception {
+        TaskRequest request = new TaskRequest();
+        request.setTitle("Tache invalide");
+        request.setDescription("Test de validation");
+        request.setPriority("URGENT");
+
+        mockMvc.perform(post("/api/tasks")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(request)))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message").value(org.hamcrest.Matchers.containsString("La priorite doit etre LOW, MEDIUM ou HIGH")));
     }
 
     @Test
@@ -138,5 +172,21 @@ class TaskControllerIntegrationTest {
 
         mockMvc.perform(get("/api/tasks/{id}", savedTask.getId()))
                 .andExpect(status().isNotFound());
+    }
+
+    @Test
+    void shouldDeleteCompletedTasks() throws Exception {
+        taskRepository.save(new Task("Deja terminee", "A supprimer", true, TaskPriority.LOW));
+        taskRepository.save(new Task("Encore ouverte", "A conserver", false, TaskPriority.HIGH));
+        taskRepository.save(new Task("Encore une terminee", "A supprimer aussi", true, TaskPriority.MEDIUM));
+
+        mockMvc.perform(delete("/api/tasks/completed"))
+                .andExpect(status().isNoContent());
+
+        org.assertj.core.api.Assertions.assertThat(taskRepository.findAll())
+                .hasSize(1)
+                .first()
+                .extracting(Task::getTitle)
+                .isEqualTo("Encore ouverte");
     }
 }

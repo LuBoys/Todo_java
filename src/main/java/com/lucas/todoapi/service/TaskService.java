@@ -4,6 +4,7 @@ import com.lucas.todoapi.dto.TaskRequest;
 import com.lucas.todoapi.dto.TaskStatsResponse;
 import com.lucas.todoapi.exception.TaskNotFoundException;
 import com.lucas.todoapi.model.Task;
+import com.lucas.todoapi.model.TaskPriority;
 import com.lucas.todoapi.repository.TaskRepository;
 import org.springframework.stereotype.Service;
 
@@ -24,6 +25,8 @@ public class TaskService {
         task.setDescription(cleanDescription(request.getDescription()));
         // Valeur par defaut a false si le front n'envoie rien.
         task.setCompleted(Boolean.TRUE.equals(request.getCompleted()));
+        // Priorite moyenne par defaut pour eviter un tri incoherent a l'affichage.
+        task.setPriority(TaskPriority.fromNullable(request.getPriority()));
 
         return taskRepository.save(task);
     }
@@ -60,6 +63,10 @@ public class TaskService {
             task.setCompleted(request.getCompleted());
         }
 
+        if (request.getPriority() != null) {
+            task.setPriority(TaskPriority.fromNullable(request.getPriority()));
+        }
+
         return taskRepository.save(task);
     }
 
@@ -71,6 +78,7 @@ public class TaskService {
         duplicatedTask.setDescription(sourceTask.getDescription());
         // Une copie repart ouverte pour pouvoir etre retravaillee sans toucher a l'originale.
         duplicatedTask.setCompleted(false);
+        duplicatedTask.setPriority(sourceTask.getPriority());
 
         return taskRepository.save(duplicatedTask);
     }
@@ -78,6 +86,16 @@ public class TaskService {
     public void deleteTask(Long id) {
         Task task = findTaskById(id);
         taskRepository.delete(task);
+    }
+
+    public void deleteCompletedTasks() {
+        List<Task> completedTasks = taskRepository.findAllByCompletedTrue();
+
+        if (completedTasks.isEmpty()) {
+            return;
+        }
+
+        taskRepository.deleteAllInBatch(completedTasks);
     }
 
     public List<Task> completeAllTasks() {

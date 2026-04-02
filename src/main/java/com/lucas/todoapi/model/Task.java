@@ -3,6 +3,8 @@ package com.lucas.todoapi.model;
 import com.fasterxml.jackson.annotation.JsonFormat;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
@@ -29,6 +31,10 @@ public class Task {
     @Column(nullable = false)
     private boolean completed;
 
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false, length = 10)
+    private TaskPriority priority;
+
     @JsonFormat(pattern = "yyyy-MM-dd HH:mm:ss")
     @Column(nullable = false)
     private LocalDateTime createdAt;
@@ -41,9 +47,14 @@ public class Task {
     }
 
     public Task(String title, String description, boolean completed) {
+        this(title, description, completed, TaskPriority.MEDIUM);
+    }
+
+    public Task(String title, String description, boolean completed, TaskPriority priority) {
         this.title = title;
         this.description = description;
         this.completed = completed;
+        this.priority = priority;
     }
 
     @PrePersist
@@ -52,6 +63,11 @@ public class Task {
         LocalDateTime now = LocalDateTime.now();
         this.createdAt = now;
         this.updatedAt = now;
+
+        if (this.priority == null) {
+            // Filet de securite si une tache est creee sans passer par le DTO.
+            this.priority = TaskPriority.MEDIUM;
+        }
     }
 
     @PreUpdate
@@ -89,6 +105,14 @@ public class Task {
 
     public void setCompleted(boolean completed) {
         this.completed = completed;
+    }
+
+    public TaskPriority getPriority() {
+        return priority;
+    }
+
+    public void setPriority(TaskPriority priority) {
+        this.priority = priority;
     }
 
     public LocalDateTime getCreatedAt() {

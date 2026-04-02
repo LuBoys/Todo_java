@@ -8,12 +8,14 @@ Le backend expose une API REST en Java / Spring Boot, et le frontend React + Tai
 
 - creer une tache
 - ajouter un detail facultatif a une tache
+- definir une priorite basse, moyenne ou haute
 - voir toutes les taches
 - voir une tache par son id
 - modifier une tache
 - modifier une tache directement depuis l'interface
 - dupliquer une tache en un clic
 - supprimer une tache
+- supprimer toutes les taches terminees en une seule action
 - terminer toutes les taches restantes
 - voir quelques stats rapides sur la liste
 - valider les donnees entrantes
@@ -107,6 +109,7 @@ Content-Type: application/json
 {
   "title": "Finir le mini projet",
   "description": "Faire l'API REST avant ce soir",
+  "priority": "HIGH",
   "completed": false
 }
 ```
@@ -150,6 +153,7 @@ Content-Type: application/json
 {
   "title": "Finir le mini projet Java",
   "description": "Ajouter aussi le README",
+  "priority": "MEDIUM",
   "completed": true
 }
 ```
@@ -168,6 +172,12 @@ La copie reprend le titre et la description, puis repart en tache non terminee.
 DELETE /api/tasks/{id}
 ```
 
+### Supprimer toutes les taches terminees
+
+```http
+DELETE /api/tasks/completed
+```
+
 ### Terminer toutes les taches restantes
 
 ```http
@@ -182,6 +192,7 @@ curl -X POST http://localhost:8080/api/tasks \
   -d '{
     "title": "Preparer mon GitHub",
     "description": "Ajouter un projet Spring Boot simple",
+    "priority": "MEDIUM",
     "completed": false
   }'
 ```
@@ -191,6 +202,7 @@ curl -X POST http://localhost:8080/api/tasks \
 - `title` obligatoire
 - `title` limite a 120 caracteres
 - `description` limitee a 500 caracteres
+- `priority` optionnelle, valeurs acceptees : `LOW`, `MEDIUM`, `HIGH`
 
 ## Tests
 

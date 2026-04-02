@@ -1,37 +1,72 @@
 import { useEffect, useMemo, useState } from "react";
 import { AnimatePresence, motion } from "motion/react";
 import {
+  ArrowDownUp,
   CheckCheck,
   CheckCircle2,
   Circle,
   Copy,
+  Flag,
   ListTodo,
   PencilLine,
   Plus,
   Save,
   Search,
+  Target,
   Trash2,
   X
 } from "lucide-react";
 
 const filters = ["toutes", "a_faire", "terminees"];
+const sortOptions = [
+  { value: "priority", label: "Priorite" },
+  { value: "recent", label: "Recents" },
+  { value: "alphabetical", label: "A-Z" }
+];
+const priorityOptions = [
+  {
+    value: "LOW",
+    label: "Basse",
+    badgeClass: "border-slate-200 bg-slate-50 text-slate-600",
+    activeClass: "border-slate-300 bg-slate-100 text-slate-700",
+    dotClass: "bg-slate-400"
+  },
+  {
+    value: "MEDIUM",
+    label: "Moyenne",
+    badgeClass: "border-amber-200 bg-amber-50 text-amber-700",
+    activeClass: "border-amber-300 bg-amber-100 text-amber-800",
+    dotClass: "bg-amber-500"
+  },
+  {
+    value: "HIGH",
+    label: "Haute",
+    badgeClass: "border-rose-200 bg-rose-50 text-rose-700",
+    activeClass: "border-rose-300 bg-rose-100 text-rose-800",
+    dotClass: "bg-rose-500"
+  }
+];
 
 function App() {
   const [tasks, setTasks] = useState([]);
   const [stats, setStats] = useState(null);
   const [newTaskText, setNewTaskText] = useState("");
   const [newTaskDescription, setNewTaskDescription] = useState("");
+  const [newTaskPriority, setNewTaskPriority] = useState("MEDIUM");
   const [searchText, setSearchText] = useState("");
   const [filter, setFilter] = useState("toutes");
+  const [sortBy, setSortBy] = useState("priority");
   const [showDescriptionField, setShowDescriptionField] = useState(false);
   const [editingTaskId, setEditingTaskId] = useState(null);
   const [editingTitle, setEditingTitle] = useState("");
   const [editingDescription, setEditingDescription] = useState("");
+  const [editingPriority, setEditingPriority] = useState("MEDIUM");
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [bulkUpdating, setBulkUpdating] = useState(false);
   const [duplicatingTaskId, setDuplicatingTaskId] = useState(null);
   const [savingTaskId, setSavingTaskId] = useState(null);
+  const [clearingCompleted, setClearingCompleted] = useState(false);
   const [error, setError] = useState("");
 
   useEffect(() => {
@@ -44,6 +79,9 @@ function App() {
   const totalTasksCount = stats?.total ?? tasks.length;
   const activeTasksCount = stats?.remaining ?? localActiveTasksCount;
   const doneTasksCount = stats?.completed ?? localDoneTasksCount;
+  const highPriorityTasksCount = tasks.filter(
+    (task) => !task.completed && getTaskPriority(task.priority) === "HIGH"
+  ).length;
   const completionRate = totalTasksCount === 0 ? 0 : Math.round((doneTasksCount / totalTasksCount) * 100);
 
   const filteredTasks = useMemo(() => {
@@ -62,11 +100,21 @@ function App() {
         return true;
       }
 
-      // Recherche geree cote front.
       const searchableText = `${task.title} ${task.description || ""}`.toLowerCase();
       return searchableText.includes(normalizedSearch);
     });
   }, [filter, searchText, tasks]);
+
+  const sortedTasks = useMemo(() => {
+    // Le tri reste cote client pour garder l'UI reactive sans multiplier les endpoints.
+    return [...filteredTasks].sort((taskA, taskB) => compareTasks(taskA, taskB, sortBy));
+  }, [filteredTasks, sortBy]);
+
+  const focusTask = useMemo(() => {
+    return [...tasks]
+      .filter((task) => !task.completed)
+      .sort((taskA, taskB) => compareTasks(taskA, taskB, "priority"))[0] ?? null;
+  }, [tasks]);
 
   function getFilterCount(currentFilter) {
     if (currentFilter === "a_faire") {
@@ -84,6 +132,7 @@ function App() {
     setEditingTaskId(null);
     setEditingTitle("");
     setEditingDescription("");
+    setEditingPriority("MEDIUM");
   }
 
   function beginTaskEdit(task) {
@@ -91,6 +140,7 @@ function App() {
     setEditingTaskId(task.id);
     setEditingTitle(task.title);
     setEditingDescription(task.description || "");
+    setEditingPriority(getTaskPriority(task.priority));
   }
 
   async function loadTasks() {
@@ -99,7 +149,6 @@ function App() {
 
     try {
       // Recharge de la liste complete apres chaque action.
-      // Recuperation des stats dans la meme sequence.
       const [tasksResult, statsResult] = await Promise.allSettled([
         fetch("/api/tasks"),
         fetch("/api/tasks/stats")
@@ -145,6 +194,7 @@ function App() {
         body: JSON.stringify({
           title: text,
           description: newTaskDescription.trim(),
+          priority: newTaskPriority,
           completed: false
         })
       });
@@ -156,8 +206,8 @@ function App() {
 
       setNewTaskText("");
       setNewTaskDescription("");
+      setNewTaskPriority("MEDIUM");
       setShowDescriptionField(false);
-      // Recharge complete de la liste apres creation.
       await loadTasks();
     } catch (submitError) {
       setError(submitError.message);
@@ -170,7 +220,6 @@ function App() {
     setError("");
 
     try {
-      // Envoi de toute la tache pour rester coherent avec le DTO du back.
       const response = await fetch(`/api/tasks/${task.id}`, {
         method: "PUT",
         headers: {
@@ -179,6 +228,7 @@ function App() {
         body: JSON.stringify({
           title: task.title,
           description: task.description || "",
+          priority: getTaskPriority(task.priority),
           completed: !task.completed
         })
       });
@@ -229,7 +279,6 @@ function App() {
         throw new Error(apiError?.message || "Impossible de dupliquer la tache.");
       }
 
-      // On recharge la liste pour recuperer la copie avec son id et ses dates backend.
       await loadTasks();
     } catch (duplicateError) {
       setError(duplicateError.message);
@@ -239,31 +288,27 @@ function App() {
   }
 
   async function clearCompleted() {
-    const completedTasks = tasks.filter((task) => task.completed);
-
-    if (completedTasks.length === 0) {
+    if (!tasks.some((task) => task.completed)) {
       return;
     }
 
+    setClearingCompleted(true);
     setError("");
 
     try {
-      // Suppression en lot des taches deja terminees.
-      await Promise.all(
-        completedTasks.map((task) =>
-          fetch(`/api/tasks/${task.id}`, {
-            method: "DELETE"
-          }).then((response) => {
-            if (!response.ok) {
-              throw new Error();
-            }
-          })
-        )
-      );
+      const response = await fetch("/api/tasks/completed", {
+        method: "DELETE"
+      });
+
+      if (!response.ok) {
+        throw new Error("Impossible d'effacer les taches terminees.");
+      }
 
       await loadTasks();
-    } catch {
-      setError("Impossible d'effacer les taches terminees.");
+    } catch (clearError) {
+      setError(clearError.message);
+    } finally {
+      setClearingCompleted(false);
     }
   }
 
@@ -287,6 +332,7 @@ function App() {
         body: JSON.stringify({
           title: trimmedTitle,
           description: editingDescription.trim(),
+          priority: editingPriority,
           completed: task.completed
         })
       });
@@ -310,7 +356,6 @@ function App() {
       return;
     }
 
-    // Desactivation du bouton pendant la requete pour eviter les doubles clics.
     setBulkUpdating(true);
     setError("");
 
@@ -332,75 +377,131 @@ function App() {
   }
 
   return (
-    <div className="min-h-screen bg-transparent px-4 py-12 text-slate-900 sm:px-6 lg:px-8">
-      <div className="mx-auto max-w-2xl">
+    <div className="min-h-screen bg-transparent px-4 py-10 text-slate-900 sm:px-6 lg:px-8">
+      <div className="mx-auto max-w-5xl">
         <motion.div
           initial={{ opacity: 0, y: 16 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.35 }}
-          className="mb-5 flex items-center gap-3"
+          className="mb-5 flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between"
         >
-          <div className="rounded-xl bg-blue-600 p-3 text-white shadow-sm">
-            <ListTodo size={28} />
+          <div className="flex items-center gap-3">
+            <div className="rounded-2xl bg-slate-900 p-3 text-white shadow-sm">
+              <ListTodo size={28} />
+            </div>
+            <div>
+              <h1 className="text-3xl font-bold tracking-tight text-slate-900">Todo Lucas</h1>
+              <p className="mt-1 text-sm text-slate-500">
+                {totalTasksCount === 0
+                  ? "Suivi simple des taches du moment"
+                  : `${doneTasksCount} tache${doneTasksCount > 1 ? "s" : ""} terminee${doneTasksCount > 1 ? "s" : ""} sur ${totalTasksCount}`}
+              </p>
+            </div>
           </div>
-          <div>
-            <h1 className="text-3xl font-bold tracking-tight text-slate-900">Todo Lucas</h1>
-            <p className="mt-1 text-sm text-slate-500">
-              {totalTasksCount === 0
-                ? "Suivi simple des taches du moment"
-                : `${doneTasksCount} tache${doneTasksCount > 1 ? "s" : ""} terminee${doneTasksCount > 1 ? "s" : ""} sur ${totalTasksCount}`}
-            </p>
-          </div>
-        </motion.div>
 
-        <motion.div
-          initial={{ opacity: 0, y: 12 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.35, delay: 0.06 }}
-          className="mb-6 flex flex-wrap gap-3"
-        >
-          <SummaryPill label="Total" value={totalTasksCount} />
-          <SummaryPill label="A faire" value={activeTasksCount} />
-          <SummaryPill label="Terminees" value={doneTasksCount} />
-          <div className="inline-flex items-center gap-2 rounded-full border border-emerald-200 bg-emerald-50 px-4 py-2 text-sm font-medium text-emerald-700">
-            <span className="h-2 w-2 rounded-full bg-emerald-500" />
-            API connectee
+          <div className="flex flex-wrap gap-3">
+            <SummaryPill label="Total" value={totalTasksCount} />
+            <SummaryPill label="A faire" value={activeTasksCount} />
+            <SummaryPill label="Terminees" value={doneTasksCount} />
+            <SummaryPill label="Haute prio" value={highPriorityTasksCount} accent="rose" />
           </div>
         </motion.div>
 
         <motion.div
           initial={{ opacity: 0, y: 14 }}
           animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.35, delay: 0.08 }}
-          className="mb-6 rounded-2xl border border-slate-200 bg-white/85 p-5 shadow-[0_10px_30px_rgba(15,23,42,0.05)]"
+          transition={{ duration: 0.35, delay: 0.05 }}
+          className="mb-6 grid gap-4 lg:grid-cols-[minmax(0,1.4fr)_minmax(320px,0.9fr)]"
         >
-          <div className="flex items-center justify-between gap-3 text-sm">
-            <span className="font-medium text-slate-700">Progression</span>
-            <span className="text-slate-500">{completionRate}% termine</span>
+          <div className="rounded-3xl border border-slate-200 bg-white/90 p-5 shadow-[0_16px_40px_rgba(15,23,42,0.06)]">
+            <div className="flex items-center justify-between gap-3 text-sm">
+              <span className="font-medium text-slate-700">Progression</span>
+              <span className="text-slate-500">{completionRate}% termine</span>
+            </div>
+
+            <div className="mt-3 h-2 overflow-hidden rounded-full bg-slate-100">
+              <div
+                className="h-full rounded-full bg-slate-900 transition-all duration-300"
+                style={{ width: `${completionRate}%` }}
+              />
+            </div>
+
+            <div className="mt-4 grid gap-3 sm:grid-cols-2">
+              <div className="rounded-2xl bg-slate-50 px-4 py-3">
+                <p className="text-xs uppercase tracking-[0.16em] text-slate-400">Charge active</p>
+                <p className="mt-2 text-sm text-slate-600">
+                  {activeTasksCount === 0 && totalTasksCount > 0
+                    ? "Tout est boucle pour le moment."
+                    : `${activeTasksCount} tache${activeTasksCount > 1 ? "s" : ""} encore a faire.`}
+                </p>
+              </div>
+
+              <div className="rounded-2xl bg-slate-50 px-4 py-3">
+                <p className="text-xs uppercase tracking-[0.16em] text-slate-400">Vigilance</p>
+                <p className="mt-2 text-sm text-slate-600">
+                  {highPriorityTasksCount > 0
+                    ? `${highPriorityTasksCount} tache${highPriorityTasksCount > 1 ? "s" : ""} haute priorite en attente.`
+                    : "Aucun sujet chaud en attente."}
+                </p>
+              </div>
+            </div>
           </div>
 
-          <div className="mt-3 h-2 overflow-hidden rounded-full bg-slate-100">
-            <div
-              className="h-full rounded-full bg-blue-600 transition-all duration-300"
-              style={{ width: `${completionRate}%` }}
-            />
-          </div>
+          <div className="rounded-3xl border border-slate-200 bg-slate-900 p-5 text-white shadow-[0_18px_50px_rgba(15,23,42,0.16)]">
+            <div className="flex items-center gap-2 text-sm text-slate-300">
+              <Target size={16} />
+              <span>Focus du jour</span>
+            </div>
 
-          <p className="mt-3 text-sm text-slate-500">
-            {activeTasksCount === 0 && totalTasksCount > 0
-              ? "Tout est termine pour le moment."
-              : `${activeTasksCount} tache${activeTasksCount > 1 ? "s" : ""} encore a faire.`}
-          </p>
+            {focusTask ? (
+              <div className="mt-4">
+                <PriorityBadge priority={focusTask.priority} dark />
+                <h2 className="mt-4 text-xl font-semibold leading-tight">{focusTask.title}</h2>
+                <p className="mt-2 text-sm text-slate-300">
+                  {focusTask.description || "Pas de detail ajoute pour cette tache."}
+                </p>
+                <div className="mt-4 flex flex-wrap items-center gap-3 text-xs text-slate-400">
+                  <span>Cree le {formatTaskDate(focusTask.createdAt)}</span>
+                  <span>Maj {formatTaskDate(focusTask.updatedAt)}</span>
+                </div>
+                <div className="mt-5 flex flex-wrap gap-3">
+                  <button
+                    type="button"
+                    onClick={() => toggleTask(focusTask)}
+                    className="inline-flex items-center gap-2 rounded-xl bg-white px-4 py-2 text-sm font-medium text-slate-900 transition-colors hover:bg-slate-100"
+                  >
+                    <CheckCircle2 size={16} />
+                    Marquer faite
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => beginTaskEdit(focusTask)}
+                    className="inline-flex items-center gap-2 rounded-xl border border-white/15 px-4 py-2 text-sm font-medium text-white/85 transition-colors hover:bg-white/10"
+                  >
+                    <PencilLine size={16} />
+                    Modifier
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <div className="mt-6 space-y-3">
+                <p className="text-xl font-semibold">Aucune tache en attente.</p>
+                <p className="text-sm text-slate-300">
+                  La liste est a jour. Tu peux ajouter le prochain sujet ou garder la session propre.
+                </p>
+              </div>
+            )}
+          </div>
         </motion.div>
 
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.4, delay: 0.05 }}
-          className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-[0_18px_40px_rgba(15,23,42,0.06)]"
+          transition={{ duration: 0.4, delay: 0.08 }}
+          className="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-[0_18px_40px_rgba(15,23,42,0.06)]"
         >
-          <div className="border-b border-slate-100 bg-slate-50/70 p-6">
-            <form onSubmit={addTask} className="space-y-3">
+          <div className="border-b border-slate-100 bg-slate-50/80 p-6">
+            <form onSubmit={addTask} className="space-y-4">
               <div className="relative flex items-center">
                 <input
                   type="text"
@@ -408,12 +509,12 @@ function App() {
                   onChange={(event) => setNewTaskText(event.target.value)}
                   placeholder="Que devez-vous faire ?"
                   maxLength={120}
-                  className="w-full rounded-xl border border-slate-200 bg-white py-4 pl-5 pr-14 text-slate-700 placeholder:text-slate-400 shadow-sm transition-all focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                  className="w-full rounded-2xl border border-slate-200 bg-white py-4 pl-5 pr-14 text-slate-700 placeholder:text-slate-400 shadow-sm transition-all focus:border-slate-900 focus:outline-none focus:ring-2 focus:ring-slate-900/10"
                 />
                 <button
                   type="submit"
                   disabled={submitting || !newTaskText.trim()}
-                  className="absolute right-2 rounded-lg bg-blue-600 p-2 text-white transition-colors hover:bg-blue-700 disabled:opacity-50 disabled:hover:bg-blue-600"
+                  className="absolute right-2 rounded-xl bg-slate-900 p-2 text-white transition-colors hover:bg-slate-800 disabled:opacity-50 disabled:hover:bg-slate-900"
                   aria-label="Ajouter une tache"
                 >
                   <Plus size={20} />
@@ -427,30 +528,37 @@ function App() {
                   placeholder="Ajouter un detail utile si besoin"
                   maxLength={500}
                   rows={3}
-                  className="w-full resize-none rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700 placeholder:text-slate-400 shadow-sm transition-all focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                  className="w-full resize-none rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700 placeholder:text-slate-400 shadow-sm transition-all focus:border-slate-900 focus:outline-none focus:ring-2 focus:ring-slate-900/10"
                 />
               )}
 
-              <div className="flex flex-wrap items-center justify-between gap-3 text-sm">
-                <button
-                  type="button"
-                  onClick={() => setShowDescriptionField((currentValue) => !currentValue)}
-                  className="font-medium text-slate-500 transition-colors hover:text-slate-900"
-                >
-                  {showDescriptionField ? "Masquer le detail" : "Ajouter un detail"}
-                </button>
-
-                {showDescriptionField && (
-                  <span className="text-xs text-slate-400">
-                    {newTaskDescription.trim().length}/500 caracteres
+              <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+                <div className="flex flex-wrap items-center gap-3">
+                  <span className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">
+                    Priorite
                   </span>
-                )}
+                  <PriorityPicker value={newTaskPriority} onChange={setNewTaskPriority} />
+                </div>
+
+                <div className="flex flex-wrap items-center justify-between gap-3 text-sm lg:justify-end">
+                  <button
+                    type="button"
+                    onClick={() => setShowDescriptionField((currentValue) => !currentValue)}
+                    className="font-medium text-slate-500 transition-colors hover:text-slate-900"
+                  >
+                    {showDescriptionField ? "Masquer le detail" : "Ajouter un detail"}
+                  </button>
+
+                  <span className="text-xs text-slate-400">
+                    {showDescriptionField ? `${newTaskDescription.trim().length}/500 caracteres` : "120 caracteres pour le titre"}
+                  </span>
+                </div>
               </div>
             </form>
 
             {tasks.length > 0 && (
-              <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-center">
-                <div className="relative flex-1">
+              <div className="mt-5 grid gap-3 lg:grid-cols-[minmax(0,1fr)_190px_auto]">
+                <div className="relative">
                   <Search
                     size={16}
                     className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-slate-400"
@@ -460,7 +568,7 @@ function App() {
                     value={searchText}
                     onChange={(event) => setSearchText(event.target.value)}
                     placeholder="Rechercher une tache"
-                    className="w-full rounded-xl border border-slate-200 bg-white py-3 pl-11 pr-20 text-sm text-slate-700 placeholder:text-slate-400 shadow-sm transition-all focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                    className="w-full rounded-2xl border border-slate-200 bg-white py-3 pl-11 pr-20 text-sm text-slate-700 placeholder:text-slate-400 shadow-sm transition-all focus:border-slate-900 focus:outline-none focus:ring-2 focus:ring-slate-900/10"
                   />
 
                   {searchText.trim() && (
@@ -474,11 +582,30 @@ function App() {
                   )}
                 </div>
 
+                <label className="relative flex items-center">
+                  <ArrowDownUp
+                    size={16}
+                    className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-slate-400"
+                  />
+                  <select
+                    value={sortBy}
+                    onChange={(event) => setSortBy(event.target.value)}
+                    className="w-full appearance-none rounded-2xl border border-slate-200 bg-white py-3 pl-11 pr-4 text-sm text-slate-700 shadow-sm transition-all focus:border-slate-900 focus:outline-none focus:ring-2 focus:ring-slate-900/10"
+                    aria-label="Trier les taches"
+                  >
+                    {sortOptions.map((option) => (
+                      <option key={option.value} value={option.value}>
+                        Trier par {option.label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+
                 <button
                   type="button"
                   onClick={completeAllTasks}
                   disabled={bulkUpdating || activeTasksCount === 0}
-                  className="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+                  className="inline-flex items-center justify-center gap-2 rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   <CheckCheck size={16} />
                   Tout terminer
@@ -488,16 +615,16 @@ function App() {
           </div>
 
           {tasks.length > 0 && (
-            <div className="flex flex-col gap-3 border-b border-slate-100 px-6 py-4 text-sm sm:flex-row sm:items-center sm:justify-between">
-              <div className="flex gap-2">
+            <div className="flex flex-col gap-3 border-b border-slate-100 px-6 py-4 text-sm lg:flex-row lg:items-center lg:justify-between">
+              <div className="flex flex-wrap gap-2">
                 {filters.map((currentFilter) => (
                   <button
                     key={currentFilter}
                     type="button"
                     onClick={() => setFilter(currentFilter)}
-                    className={`inline-flex items-center gap-2 rounded-md px-3 py-1.5 font-medium transition-colors ${
+                    className={`inline-flex items-center gap-2 rounded-full px-3 py-1.5 font-medium transition-colors ${
                       filter === currentFilter
-                        ? "bg-slate-100 text-slate-900"
+                        ? "bg-slate-900 text-white"
                         : "text-slate-500 hover:bg-slate-50 hover:text-slate-900"
                     }`}
                   >
@@ -509,7 +636,7 @@ function App() {
                     <span
                       className={`rounded-full px-2 py-0.5 text-xs ${
                         filter === currentFilter
-                          ? "bg-white text-slate-700"
+                          ? "bg-white/10 text-white"
                           : "bg-slate-100 text-slate-500"
                       }`}
                     >
@@ -520,7 +647,7 @@ function App() {
               </div>
 
               <span className="font-medium text-slate-500">
-                {activeTasksCount} tache{activeTasksCount > 1 ? "s" : ""} restante{activeTasksCount > 1 ? "s" : ""}
+                {sortedTasks.length} resultat{sortedTasks.length > 1 ? "s" : ""}
               </span>
             </div>
           )}
@@ -543,7 +670,7 @@ function App() {
                 >
                   Chargement...
                 </motion.li>
-              ) : filteredTasks.length === 0 ? (
+              ) : sortedTasks.length === 0 ? (
                 <motion.li
                   key="empty"
                   initial={{ opacity: 0, paddingTop: 0, paddingBottom: 0 }}
@@ -560,7 +687,7 @@ function App() {
                         : "Votre liste est vide. Ajoutez une tache ci-dessus."}
                 </motion.li>
               ) : (
-                filteredTasks.map((task) => (
+                sortedTasks.map((task) => (
                   <motion.li
                     key={task.id}
                     layout
@@ -578,45 +705,57 @@ function App() {
                           event.preventDefault();
                           saveTaskEdits(task);
                         }}
-                        className="flex flex-col gap-4 sm:flex-row sm:items-start"
+                        className="flex flex-col gap-4"
                       >
-                        <span
-                          className={`pt-1 ${
-                            task.completed ? "text-blue-500" : "text-slate-300"
-                          }`}
-                        >
-                          {task.completed ? <CheckCircle2 size={24} /> : <Circle size={24} />}
-                        </span>
+                        <div className="flex gap-4">
+                          <span
+                            className={`pt-1 ${
+                              task.completed ? "text-slate-900" : "text-slate-300"
+                            }`}
+                          >
+                            {task.completed ? <CheckCircle2 size={24} /> : <Circle size={24} />}
+                          </span>
 
-                        <div className="flex-1 space-y-3">
-                          <input
-                            type="text"
-                            value={editingTitle}
-                            onChange={(event) => setEditingTitle(event.target.value)}
-                            maxLength={120}
-                            className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700 shadow-sm transition-all focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
-                          />
+                          <div className="min-w-0 flex-1 space-y-3">
+                            <input
+                              type="text"
+                              value={editingTitle}
+                              onChange={(event) => setEditingTitle(event.target.value)}
+                              maxLength={120}
+                              className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700 shadow-sm transition-all focus:border-slate-900 focus:outline-none focus:ring-2 focus:ring-slate-900/10"
+                            />
 
-                          <textarea
-                            value={editingDescription}
-                            onChange={(event) => setEditingDescription(event.target.value)}
-                            placeholder="Ajouter un detail si besoin"
-                            maxLength={500}
-                            rows={3}
-                            className="w-full resize-none rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700 shadow-sm transition-all focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
-                          />
+                            <textarea
+                              value={editingDescription}
+                              onChange={(event) => setEditingDescription(event.target.value)}
+                              placeholder="Ajouter un detail si besoin"
+                              maxLength={500}
+                              rows={3}
+                              className="w-full resize-none rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700 shadow-sm transition-all focus:border-slate-900 focus:outline-none focus:ring-2 focus:ring-slate-900/10"
+                            />
 
-                          <div className="flex flex-wrap items-center justify-between gap-3 text-xs text-slate-400">
-                            <span>Maj {formatTaskDate(task.updatedAt)}</span>
-                            <span>{editingDescription.trim().length}/500 caracteres</span>
+                            <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
+                              <div className="flex flex-wrap items-center gap-3">
+                                <span className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">
+                                  Priorite
+                                </span>
+                                <PriorityPicker value={editingPriority} onChange={setEditingPriority} compact />
+                              </div>
+
+                              <div className="flex flex-wrap items-center gap-3 text-xs text-slate-400">
+                                <span>Cree le {formatTaskDate(task.createdAt)}</span>
+                                <span>Maj {formatTaskDate(task.updatedAt)}</span>
+                                <span>{editingDescription.trim().length}/500 caracteres</span>
+                              </div>
+                            </div>
                           </div>
                         </div>
 
-                        <div className="flex shrink-0 items-center gap-2 self-end sm:self-start">
+                        <div className="flex flex-wrap items-center justify-end gap-2">
                           <button
                             type="submit"
                             disabled={savingTaskId === task.id || !editingTitle.trim()}
-                            className="inline-flex items-center gap-2 rounded-lg bg-slate-900 px-3 py-2 text-sm font-medium text-white transition-colors hover:bg-slate-800 disabled:opacity-50"
+                            className="inline-flex items-center gap-2 rounded-xl bg-slate-900 px-3 py-2 text-sm font-medium text-white transition-colors hover:bg-slate-800 disabled:opacity-50"
                           >
                             <Save size={16} />
                             Enregistrer
@@ -625,7 +764,7 @@ function App() {
                           <button
                             type="button"
                             onClick={resetEditingState}
-                            className="inline-flex items-center gap-2 rounded-lg border border-slate-200 px-3 py-2 text-sm font-medium text-slate-600 transition-colors hover:bg-white"
+                            className="inline-flex items-center gap-2 rounded-xl border border-slate-200 px-3 py-2 text-sm font-medium text-slate-600 transition-colors hover:bg-white"
                           >
                             <X size={16} />
                             Annuler
@@ -633,15 +772,15 @@ function App() {
                         </div>
                       </form>
                     ) : (
-                      <div className="flex items-center justify-between gap-4">
+                      <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
                         <button
                           type="button"
-                          className="flex min-w-0 flex-1 items-center gap-4 text-left"
+                          className="flex min-w-0 flex-1 items-start gap-4 text-left"
                           onClick={() => toggleTask(task)}
                         >
                           <span
-                            className={`flex-shrink-0 transition-colors ${
-                              task.completed ? "text-blue-500" : "text-slate-300 hover:text-blue-400"
+                            className={`mt-1 flex-shrink-0 transition-colors ${
+                              task.completed ? "text-slate-900" : "text-slate-300 hover:text-slate-700"
                             }`}
                             aria-hidden="true"
                           >
@@ -649,29 +788,33 @@ function App() {
                           </span>
 
                           <span className="min-w-0">
-                            <span
-                              className={`block text-base transition-all duration-200 ${
-                                task.completed ? "text-slate-400 line-through" : "text-slate-700"
-                              }`}
-                            >
-                              {task.title}
+                            <span className="flex flex-wrap items-center gap-2">
+                              <span
+                                className={`block text-base transition-all duration-200 ${
+                                  task.completed ? "text-slate-400 line-through" : "text-slate-700"
+                                }`}
+                              >
+                                {task.title}
+                              </span>
+                              <PriorityBadge priority={task.priority} />
                             </span>
 
-                            <span className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-slate-400">
+                            <span className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-slate-400">
                               {task.description && (
-                                <span className="max-w-xs truncate sm:max-w-sm">{task.description}</span>
+                                <span className="max-w-xl truncate">{task.description}</span>
                               )}
+                              <span>Cree le {formatTaskDate(task.createdAt)}</span>
                               <span>Maj {formatTaskDate(task.updatedAt)}</span>
                             </span>
                           </span>
                         </button>
 
-                        <div className="flex items-center gap-1">
+                        <div className="flex items-center gap-1 self-end lg:self-auto">
                           <button
                             type="button"
                             onClick={() => duplicateTask(task)}
                             disabled={duplicatingTaskId === task.id}
-                            className="rounded-lg p-2 text-slate-400 opacity-0 transition-all hover:bg-slate-100 hover:text-slate-700 focus:opacity-100 group-hover:opacity-100 disabled:cursor-not-allowed disabled:opacity-100 disabled:hover:bg-transparent"
+                            className="rounded-xl p-2 text-slate-400 opacity-0 transition-all hover:bg-slate-100 hover:text-slate-700 focus:opacity-100 group-hover:opacity-100 disabled:cursor-not-allowed disabled:opacity-100 disabled:hover:bg-transparent"
                             aria-label="Dupliquer la tache"
                           >
                             <Copy size={18} />
@@ -680,7 +823,7 @@ function App() {
                           <button
                             type="button"
                             onClick={() => beginTaskEdit(task)}
-                            className="rounded-lg p-2 text-slate-400 opacity-0 transition-all hover:bg-slate-100 hover:text-slate-700 focus:opacity-100 group-hover:opacity-100"
+                            className="rounded-xl p-2 text-slate-400 opacity-0 transition-all hover:bg-slate-100 hover:text-slate-700 focus:opacity-100 group-hover:opacity-100"
                             aria-label="Modifier la tache"
                           >
                             <PencilLine size={18} />
@@ -689,7 +832,7 @@ function App() {
                           <button
                             type="button"
                             onClick={() => deleteTask(task.id)}
-                            className="rounded-lg p-2 text-slate-400 opacity-0 transition-all hover:bg-red-50 hover:text-red-500 focus:opacity-100 group-hover:opacity-100"
+                            className="rounded-xl p-2 text-slate-400 opacity-0 transition-all hover:bg-red-50 hover:text-red-500 focus:opacity-100 group-hover:opacity-100"
                             aria-label="Supprimer la tache"
                           >
                             <Trash2 size={18} />
@@ -708,7 +851,8 @@ function App() {
               <button
                 type="button"
                 onClick={clearCompleted}
-                className="text-sm font-medium text-slate-500 transition-colors hover:text-slate-900"
+                disabled={clearingCompleted}
+                className="text-sm font-medium text-slate-500 transition-colors hover:text-slate-900 disabled:cursor-not-allowed disabled:opacity-60"
               >
                 Effacer les taches terminees
               </button>
@@ -717,20 +861,126 @@ function App() {
         </motion.div>
 
         <p className="mt-8 text-center text-sm text-slate-400">
-          Appuyez sur Entree dans le champ titre pour ajouter une tache
+          Entree ajoute une tache. Les priorites et le tri restent entierement geres dans l'app.
         </p>
       </div>
     </div>
   );
 }
 
-function SummaryPill({ label, value }) {
+function SummaryPill({ label, value, accent = "slate" }) {
+  const accentClass =
+    accent === "rose"
+      ? "border-rose-200 bg-rose-50 text-rose-700"
+      : "border-slate-200 bg-white text-slate-600";
+  const valueClass = accent === "rose" ? "text-rose-900" : "text-slate-900";
+
   return (
-    <div className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-4 py-2 text-sm text-slate-600 shadow-sm">
-      <span className="font-medium text-slate-900">{value}</span>
+    <div
+      className={`inline-flex items-center gap-2 rounded-full border px-4 py-2 text-sm shadow-sm ${accentClass}`}
+    >
+      <span className={`font-medium ${valueClass}`}>{value}</span>
       <span>{label}</span>
     </div>
   );
+}
+
+function PriorityPicker({ value, onChange, compact = false }) {
+  return (
+    <div className="flex flex-wrap gap-2">
+      {priorityOptions.map((option) => {
+        const isActive = value === option.value;
+
+        return (
+          <button
+            key={option.value}
+            type="button"
+            onClick={() => onChange(option.value)}
+            className={`inline-flex items-center gap-2 rounded-full border px-3 text-sm font-medium transition-colors ${
+              compact ? "py-1.5" : "py-2"
+            } ${
+              isActive
+                ? option.activeClass
+                : "border-slate-200 bg-white text-slate-500 hover:border-slate-300 hover:text-slate-900"
+            }`}
+          >
+            <Flag size={14} />
+            {option.label}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+function PriorityBadge({ priority, dark = false }) {
+  const option = priorityOptions.find((entry) => entry.value === getTaskPriority(priority)) ?? priorityOptions[1];
+
+  return (
+    <span
+      className={`inline-flex items-center gap-2 rounded-full border px-2.5 py-1 text-xs font-medium ${
+        dark ? "border-white/15 bg-white/10 text-white" : option.badgeClass
+      }`}
+    >
+      <span className={`h-2 w-2 rounded-full ${dark ? "bg-white" : option.dotClass}`} />
+      {option.label}
+    </span>
+  );
+}
+
+function getTaskPriority(priority) {
+  if (priority === "LOW" || priority === "HIGH") {
+    return priority;
+  }
+
+  return "MEDIUM";
+}
+
+function getPriorityWeight(priority) {
+  const normalizedPriority = getTaskPriority(priority);
+
+  if (normalizedPriority === "HIGH") {
+    return 3;
+  }
+
+  if (normalizedPriority === "LOW") {
+    return 1;
+  }
+
+  return 2;
+}
+
+function compareTasks(taskA, taskB, sortBy) {
+  const completionDiff = Number(taskA.completed) - Number(taskB.completed);
+
+  if (completionDiff !== 0) {
+    return completionDiff;
+  }
+
+  if (sortBy === "alphabetical") {
+    return taskA.title.localeCompare(taskB.title, "fr", { sensitivity: "base" });
+  }
+
+  if (sortBy === "recent") {
+    return getSortableDate(taskB.updatedAt) - getSortableDate(taskA.updatedAt);
+  }
+
+  const priorityDiff = getPriorityWeight(taskB.priority) - getPriorityWeight(taskA.priority);
+
+  if (priorityDiff !== 0) {
+    return priorityDiff;
+  }
+
+  return getSortableDate(taskB.updatedAt) - getSortableDate(taskA.updatedAt);
+}
+
+function getSortableDate(value) {
+  if (!value) {
+    return 0;
+  }
+
+  const parsedDate = new Date(value.replace(" ", "T"));
+  return Number.isNaN(parsedDate.getTime()) ? 0 : parsedDate.getTime();
 }
 
 function formatTaskDate(value) {
@@ -738,7 +988,6 @@ function formatTaskDate(value) {
     return "--";
   }
 
-  // Formatage de la date brute avant affichage dans l'UI.
   const parsedDate = new Date(value.replace(" ", "T"));
 
   if (Number.isNaN(parsedDate.getTime())) {
