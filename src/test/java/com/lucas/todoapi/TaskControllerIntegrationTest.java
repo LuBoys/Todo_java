@@ -163,6 +163,22 @@ class TaskControllerIntegrationTest {
     }
 
     @Test
+    void shouldReopenAllTasks() throws Exception {
+        taskRepository.save(new Task("Premiere terminee", "A rouvrir", true, TaskPriority.HIGH));
+        taskRepository.save(new Task("Deuxieme terminee", "A rouvrir aussi", true, TaskPriority.LOW));
+        taskRepository.save(new Task("Encore ouverte", "Ne change pas", false, TaskPriority.MEDIUM));
+
+        mockMvc.perform(put("/api/tasks/reopen-all"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].completed").value(false));
+
+        mockMvc.perform(get("/api/tasks/stats"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.remaining").value(3))
+                .andExpect(jsonPath("$.completed").value(0));
+    }
+
+    @Test
     void shouldDeleteTask() throws Exception {
         Task task = new Task("A supprimer", "On teste la suppression", false);
         Task savedTask = taskRepository.save(task);

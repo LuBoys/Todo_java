@@ -114,6 +114,22 @@ public class TaskService {
         return getAllTasks();
     }
 
+    public List<Task> reopenAllTasks() {
+        List<Task> tasksToReopen = taskRepository.findAllByCompletedTrue();
+
+        if (tasksToReopen.isEmpty()) {
+            return getAllTasks();
+        }
+
+        // Permet de remettre la liste en cours sans toucher aux priorites.
+        for (Task task : tasksToReopen) {
+            task.setCompleted(false);
+        }
+
+        taskRepository.saveAll(tasksToReopen);
+        return getAllTasks();
+    }
+
     private Task findTaskById(Long id) {
         return taskRepository.findById(id)
                 .orElseThrow(() -> new TaskNotFoundException(id));

@@ -65,6 +65,11 @@ public class TaskController {
         return ResponseEntity.ok(taskService.completeAllTasks());
     }
 
+    @PutMapping("/reopen-all")
+    public ResponseEntity<List<Task>> reopenAllTasks() {
+        return ResponseEntity.ok(taskService.reopenAllTasks());
+    }
+
     @DeleteMapping("/completed")
     public ResponseEntity<Void> deleteCompletedTasks() {
         taskService.deleteCompletedTasks();

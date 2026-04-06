@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { AnimatePresence, motion } from "motion/react";
 import {
   ArrowDownUp,
+  CornerUpLeft,
   CheckCheck,
   CheckCircle2,
   Circle,
@@ -72,6 +73,27 @@ function App() {
   useEffect(() => {
     loadTasks();
   }, []);
+
+  useEffect(() => {
+    function handleEscape(event) {
+      if (event.key !== "Escape") {
+        return;
+      }
+
+      // Raccourci simple pour sortir d'un mode de travail sans chercher le bon bouton.
+      if (editingTaskId !== null) {
+        resetEditingState();
+        return;
+      }
+
+      if (searchText.trim()) {
+        setSearchText("");
+      }
+    }
+
+    window.addEventListener("keydown", handleEscape);
+    return () => window.removeEventListener("keydown", handleEscape);
+  }, [editingTaskId, searchText]);
 
   // Calcul local de secours si la route de stats ne repond pas.
   const localActiveTasksCount = tasks.filter((task) => !task.completed).length;
@@ -376,6 +398,61 @@ function App() {
     }
   }
 
+  async function reopenAllTasks() {
+    if (doneTasksCount === 0) {
+      return;
+    }
+
+    setBulkUpdating(true);
+    setError("");
+
+    try {
+      const response = await fetch("/api/tasks/reopen-all", {
+        method: "PUT"
+      });
+
+      if (!response.ok) {
+        throw new Error("Impossible de rouvrir les taches.");
+      }
+
+      await loadTasks();
+    } catch (reopenAllError) {
+      setError(reopenAllError.message);
+    } finally {
+      setBulkUpdating(false);
+    }
+  }
+
+  async function cycleTaskPriority(task) {
+    const nextPriority = getNextPriority(task.priority);
+
+    setError("");
+
+    try {
+      // Le changement de priorite passe par la meme route que l'edition complete.
+      const response = await fetch(`/api/tasks/${task.id}`, {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          title: task.title,
+          description: task.description || "",
+          priority: nextPriority,
+          completed: task.completed
+        })
+      });
+
+      if (!response.ok) {
+        throw new Error("Impossible de changer la priorite.");
+      }
+
+      await loadTasks();
+    } catch (priorityError) {
+      setError(priorityError.message);
+    }
+  }
+
   return (
     <div className="min-h-screen bg-transparent px-4 py-10 text-slate-900 sm:px-6 lg:px-8">
       <div className="mx-auto max-w-5xl">
@@ -481,6 +558,14 @@ function App() {
                     <PencilLine size={16} />
                     Modifier
                   </button>
+                  <button
+                    type="button"
+                    onClick={() => cycleTaskPriority(focusTask)}
+                    className="inline-flex items-center gap-2 rounded-xl border border-white/15 px-4 py-2 text-sm font-medium text-white/85 transition-colors hover:bg-white/10"
+                  >
+                    <Flag size={16} />
+                    Priorite suivante
+                  </button>
                 </div>
               </div>
             ) : (
@@ -557,7 +642,7 @@ function App() {
             </form>
 
             {tasks.length > 0 && (
-              <div className="mt-5 grid gap-3 lg:grid-cols-[minmax(0,1fr)_190px_auto]">
+              <div className="mt-5 grid gap-3 lg:grid-cols-[minmax(0,1fr)_190px_auto_auto]">
                 <div className="relative">
                   <Search
                     size={16}
@@ -609,6 +694,16 @@ function App() {
                 >
                   <CheckCheck size={16} />
                   Tout terminer
+                </button>
+
+                <button
+                  type="button"
+                  onClick={reopenAllTasks}
+                  disabled={bulkUpdating || doneTasksCount === 0}
+                  className="inline-flex items-center justify-center gap-2 rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  <CornerUpLeft size={16} />
+                  Tout rouvrir
                 </button>
               </div>
             )}
@@ -796,7 +891,7 @@ function App() {
                               >
                                 {task.title}
                               </span>
-                              <PriorityBadge priority={task.priority} />
+                              <PriorityBadge priority={task.priority} onClick={() => cycleTaskPriority(task)} />
                             </span>
 
                             <span className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-slate-400">
@@ -861,7 +956,7 @@ function App() {
         </motion.div>
 
         <p className="mt-8 text-center text-sm text-slate-400">
-          Entree ajoute une tache. Les priorites et le tri restent entierement geres dans l'app.
+          Entree ajoute une tache. Escape ferme l'edition ou efface la recherche.
         </p>
       </div>
     </div>
@@ -913,8 +1008,28 @@ function PriorityPicker({ value, onChange, compact = false }) {
   );
 }
 
-function PriorityBadge({ priority, dark = false }) {
+function PriorityBadge({ priority, dark = false, onClick }) {
   const option = priorityOptions.find((entry) => entry.value === getTaskPriority(priority)) ?? priorityOptions[1];
+
+  if (onClick) {
+    return (
+      <button
+        type="button"
+        onClick={(event) => {
+          event.stopPropagation();
+          onClick();
+        }}
+        className={`inline-flex items-center gap-2 rounded-full border px-2.5 py-1 text-xs font-medium transition-colors ${
+          dark
+            ? "border-white/15 bg-white/10 text-white hover:bg-white/15"
+            : `${option.badgeClass} hover:border-slate-300`
+        }`}
+      >
+        <span className={`h-2 w-2 rounded-full ${dark ? "bg-white" : option.dotClass}`} />
+        {option.label}
+      </button>
+    );
+  }
 
   return (
     <span
@@ -934,6 +1049,20 @@ function getTaskPriority(priority) {
   }
 
   return "MEDIUM";
+}
+
+function getNextPriority(priority) {
+  const normalizedPriority = getTaskPriority(priority);
+
+  if (normalizedPriority === "LOW") {
+    return "MEDIUM";
+  }
+
+  if (normalizedPriority === "MEDIUM") {
+    return "HIGH";
+  }
+
+  return "LOW";
 }
 
 function getPriorityWeight(priority) {

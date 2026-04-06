@@ -17,6 +17,7 @@ Le backend expose une API REST en Java / Spring Boot, et le frontend React + Tai
 - supprimer une tache
 - supprimer toutes les taches terminees en une seule action
 - terminer toutes les taches restantes
+- rouvrir toutes les taches terminees en une seule action
 - voir quelques stats rapides sur la liste
 - valider les donnees entrantes
 - gerer les erreurs proprement
@@ -182,6 +183,12 @@ DELETE /api/tasks/completed
 
 ```http
 PUT /api/tasks/complete-all
+```
+
+### Rouvrir toutes les taches terminees
+
+```http
+PUT /api/tasks/reopen-all
 ```
 
 ## Exemple avec curl
